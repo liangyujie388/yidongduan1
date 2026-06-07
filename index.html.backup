@@ -571,8 +571,9 @@
         const formData = new FormData();
         formData.append("file", file);
         formData.append("user", user);
-        const response = await fetch(`${DIFY_BASE_URL}/files/upload`, {
+        const response = await fetch(`${DIFY_BASE_URL}/v1/files/upload`, {
             method: "POST",
+            headers: { "Authorization": `Bearer ${DIFY_API_KEY}` },
             body: formData
         });
         if (!response.ok) throw new Error(`文件上传失败: ${response.status}`);
@@ -594,9 +595,9 @@
             response_mode: "blocking",
             user: "mobile_user"
         };
-        const response = await fetch(`${DIFY_BASE_URL}/workflows/run`, {
+        const response = await fetch(`${DIFY_BASE_URL}/v1/workflows/run`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Authorization": `Bearer ${DIFY_API_KEY}`, "Content-Type": "application/json" },
             body: JSON.stringify(payload)
         });
         const result = await response.json();
