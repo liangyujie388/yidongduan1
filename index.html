@@ -587,23 +587,49 @@
             try {
                 const fid = await uploadFileToDify(file, "mobile_user");
                 fileIds.push({ type: "image", transfer_method: "local_file", upload_file_id: fid });
-            } catch(e) { console.warn("文件上传失败", e); }
+            } catch(e) { 
+                console.warn("⚠️ 文件上传失败", e); 
+            }
         }
         const payload = {
             inputs: { text: text, money_sent: moneySent, files_user: fileIds },
             response_mode: "blocking",
             user: "mobile_user"
         };
-        const response = await fetch(`${DIFY_BASE_URL}/workflows/run`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.message || "调用失败");
-        const answer = result?.data?.outputs?.answer || result?.data?.outputs?.text || result?.answer || null;
-        if (!answer) throw new Error("工作流未返回有效内容");
-        return answer;
+        
+        try {
+            console.log("🔄 正在调用 Dify API...", { 
+                endpoint: `${DIFY_BASE_URL}/workflows/run`,
+                inputLength: text.length,
+                hasFiles: files.length > 0
+            });
+            
+            const response = await fetch(`${DIFY_BASE_URL}/workflows/run`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                console.error(`❌ API 错误 (${response.status}):`, errorData);
+                throw new Error(`API 错误 ${response.status}: ${errorData.message || errorData.error || '未知错误'}`);
+            }
+            
+            const result = await response.json();
+            console.log("✅ Dify API 响应成功:", result);
+            
+            if (!result?.data?.outputs?.answer && !result?.data?.outputs?.text && !result?.answer) {
+                console.error("❌ Dify 返回的数据格式不正确:", result);
+                throw new Error("工作流未返回有效内容");
+            }
+            
+            const answer = result?.data?.outputs?.answer || result?.data?.outputs?.text || result?.answer || null;
+            return answer;
+        } catch (error) {
+            console.error("❌ Dify 调用异常:", error.message);
+            throw error;
+        }
     }
 
     // ---------- 聊天界面 ----------
@@ -661,14 +687,25 @@
             const difyReply = await callDifyWorkflow(userText, filesCopy);
             if (difyReply && difyReply.trim()) {
                 finalReply = difyReply;
+                console.log("✅ 接收到 Dify 回复");
             } else {
                 throw new Error("空回复");
             }
         } catch (err) {
-            console.warn("Dify 调用失败，使用本地引擎:", err);
-            finalReply = getLocalReply(userText);
-            if (filesCopy.length > 0) {
-                finalReply += "\n\n📎 已收到您的附件，但智能分析服务暂时不可用，以上是基于文本的初步判断。";
+            console.warn("⚠️ Dify 调用失败，使用本地引擎:", err.message);
+            
+            // 更详细的错误信息
+            if (err.message.includes("ERR_CONNECTION_REFUSED") || err.message.includes("Failed to fetch")) {
+                finalReply = "❌ 无法连接到反诈服务\n\n可能原因：\n1. 代理服务器未启动（需要运行 npm start）\n2. 代理服务器崩溃或断线\n3. 网络连接问题\n\n请确保在另一个终端运行了 npm start，然后重试。";
+            } else if (err.message.includes("API 错误 401") || err.message.includes("Unauthorized")) {
+                finalReply = "❌ API Key 无效或过期\n\n请检查：\n1. DIFY_API_KEY 是否正确\n2. API Key 是否过期\n3. 是否有权限调用此工作流";
+            } else if (err.message.includes("404")) {
+                finalReply = "❌ 工作流不存在\n\n请确保在 Dify 后台创建了相应的工作流";
+            } else {
+                finalReply = getLocalReply(userText);
+                if (filesCopy.length > 0) {
+                    finalReply += "\n\n📎 已收到您的附件，但智能分析服务暂时不可用，以上是基于文本的初步判断。";
+                }
             }
         }
         removeThinking();
